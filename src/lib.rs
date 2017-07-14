@@ -5,6 +5,12 @@
 #![cfg(windows)]
 #![deny(warnings, missing_docs)]
 
+// Macros are used in the unit tests, to generate interfaces.
+#[cfg(test)]
+#[macro_use] extern crate winapi;
+
+// Normal build does not use the macros.
+#[cfg(not(test))]
 extern crate winapi;
 use winapi::um::unknwnbase::IUnknown;
 use winapi::Interface;
@@ -138,5 +144,87 @@ impl<T> convert::AsMut<*mut T> for ComPtr<T> {
 		unsafe {
 			mem::transmute(self)
 		}
+	}
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+	use super::*;
+
+	use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
+
+	// Create a fake interface to test ComPtr.
+	RIDL! {
+		#[uuid(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)]
+		interface TestInterface(TestInterfaceVtbl): IUnknown(IUnknownVtbl) {
+			fn test_function() -> u32,
+		}
+	}
+
+	pub fn create_interface(output: *mut *mut TestInterface) {
+		// Note: this function leaks memory in many places.
+		// Fortunately it is reclaimed by Windows when the tests end.
+
+		let mut test_interface: Box<TestInterface> = Box::new(unsafe { mem::zeroed() });
+
+		let mut vtbl: Box<TestInterfaceVtbl> = Box::new(unsafe { mem::zeroed() });
+
+		// Function pointers for IUnknown.
+		{
+			let unkn_vtbl = &mut vtbl.parent;
+
+			use winapi::ctypes::c_void;
+			use winapi::shared::guiddef::REFIID;
+
+			unsafe extern "system"
+			fn query_interface(this: *mut IUnknown, _id: REFIID, output: *mut *mut c_void) -> i32 {
+				// We know the only ID could ever by the ID of IUnknown, or of this very interface.
+				// Therefore we can return the same pointer.
+				*output = mem::transmute(this);
+				0
+			}
+
+			unsafe extern "system"
+			fn add_ref(_this: *mut IUnknown) -> u32 { 0 }
+
+			unsafe extern "system"
+			fn release(_this: *mut IUnknown) -> u32 { 0 }
+
+			unkn_vtbl.QueryInterface = query_interface;
+			unkn_vtbl.AddRef = add_ref;
+			unkn_vtbl.Release = release;
+		}
+
+		// The vtable for the actual TestInterface.
+		{
+			unsafe extern "system"
+			fn test_function(_this: *mut TestInterface) -> u32 {
+				1234
+			}
+
+			vtbl.test_function = test_function;
+		}
+
+		test_interface.lpVtbl = Box::into_raw(vtbl);
+
+		unsafe {
+			*output = Box::into_raw(test_interface);
+		}
+	}
+
+	#[test]
+	fn create_and_use_interface() {
+		let test = ComPtr::new_with(|ptr| {
+			create_interface(ptr);
+		});
+
+		{
+			let unknown = test.query_interface::<IUnknown>();
+
+			let _clone = unknown.clone();
+		}
+
+		assert_eq!(unsafe { test.test_function() }, 1234);
 	}
 }
