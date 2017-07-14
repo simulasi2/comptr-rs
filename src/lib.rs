@@ -79,9 +79,13 @@ impl<T> ComPtr<T> {
 	}
 	
 	pub fn into_raw(self) -> *mut T {
-		unsafe {
+		let ptr = unsafe {
 			self.0.as_mut_ptr()
-		}
+		};
+		
+		mem::forget(self);
+		
+		ptr
 	}
 
 	/// Initialize from a COM pointer, checking to make sure it's not null.
