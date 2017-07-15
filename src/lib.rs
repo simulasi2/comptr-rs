@@ -51,13 +51,9 @@ impl<T> ComPtr<T> {
 		}
 	}
 
-	/// Returns a mutable reference to the COM interface.
-	// Cannot use the `AsMut` trait because it does not work with interior mutability.
-	pub fn as_mut(&self) -> &mut T {
-		// We don't need any checks because of the class invariant.
-		unsafe {
-			&mut *self.get()
-		}
+	/// Returns a mutable pointer to the COM interface.
+	pub fn as_mut_ptr(&self) -> *mut T {
+		self.get()
 	}
 
 	/// Returns the containing pointer, without calling `Release`.
@@ -75,7 +71,7 @@ impl<T> ComPtr<T> {
 	// However, being in generic code, and without having any way to have IUnknown as a trait bound, we need this method.
 	fn as_unknown(&self) -> &mut IUnknown {
 		unsafe {
-			mem::transmute(self.as_mut())
+			mem::transmute(self.get())
 		}
 	}
 
@@ -122,7 +118,9 @@ impl<T> fmt::Pointer for ComPtr<T> {
 impl<T> ops::Deref for ComPtr<T> {
 	type Target = T;
 	fn deref(&self) -> &T {
-		self.as_mut()
+		unsafe {
+			&*self.get()
+		}
 	}
 }
 
@@ -210,7 +208,7 @@ mod tests {
 			let _clone = unknown.clone();
 		}
 
-		assert_eq!(unsafe { comptr.as_mut().test_function() }, 1234);
+		assert_eq!(unsafe { comptr.test_function() }, 1234);
 	}
 
 	#[test]
