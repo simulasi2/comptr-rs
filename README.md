@@ -1,7 +1,7 @@
 # comptr-rs
 Smart pointer for [Component Object Model](https://msdn.microsoft.com/en-us/library/windows/desktop/ms680573(v=vs.85).aspx) interfaces.
 
-This crate is designed to be used together with `winapi-rs`. You can use the COM interfaces declare by it or use
+This crate is designed to be used together with `winapi-rs`. You can use the COM interfaces declared by it or use
 `RIDL!` macro from that same crate to declare your COM interfaces.
 
 **Note**: This crate currently requires a nightly version of Rust, since it uses the [Shared](https://doc.rust-lang.org/std/ptr/struct.Shared.html) struct.
@@ -22,19 +22,19 @@ extern "system" {
     fn CreateInterface(*mut *mut IUnknown);
 }
 
-// The `new_with` function takes a closure, which receives a `&mut *mut T`.
-// The closure must initialize the `ptr` to a non-null value.
-let interface = ComPtr::new_with(|ptr| {
+let interface = ComPtr::new({
+    let mut ptr = ptr::null_mut();
+
     unsafe {
-        CreateInterface(ptr);
+        CreateInterface(&mut ptr);
     }
 
-    // The pointer must be non-null or ComPtr will panic.
+    // The pointer must be non-null or undefined behaviour could occur.
     if ptr == std::ptr::null_mut() {
         panic!("Failed to create COM interface.");
     }
 
-    // If you want to create COM pointers and return an error type, use the `try_new_with` function.
+    ptr
 });
 
 // Now you can use the interface, with 100% guarantee it is not null.

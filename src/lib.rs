@@ -1,7 +1,6 @@
 //! The main feature of this crate is the `ComPtr` struct, which is used to manage a non-null pointer to a COM interface.
 
 #![feature(shared)]
-
 #![cfg(windows)]
 #![deny(warnings, missing_docs)]
 
@@ -15,38 +14,20 @@ extern crate winapi;
 use winapi::um::unknwnbase::IUnknown;
 use winapi::Interface;
 
-use std::{ptr, mem, fmt, ops, convert};
+use std::{ptr, mem, fmt, ops};
 
 /// A pointer to a COM interface.
+///
+/// The pointer owns a reference to the COM interface, meaning the COM object
+/// cannot be destroyed until the last `ComPtr` using it is destroyed.
 pub struct ComPtr<T>(ptr::Shared<T>);
 
 impl<T> ComPtr<T> {
-	/// Constructs a COM pointer by calling an initialization callback.
+	/// Constructs a `ComPtr` from a non-null raw pointer, without checking it to be non-null.
 	///
-	/// The callback receives a reference to a `*mut T`, and **must** initialize it to some non-null value.
-	/// Use `try_new_with` if initialization can fail.
-	pub fn new_with<F>(initializer: F) -> Self
-		where F: FnOnce(&mut *mut T) {
-		let mut ptr = ptr::null_mut();
-
-		initializer(&mut ptr);
-
-		Self::from_raw(ptr)
-	}
-
-	/// Tries to construct a COM pointer by calling an initialization callback that could fail.
-	///
-	/// The callback either returns `None`, meaning `ptr` must be initialized, or `Some(error)`, meaning an error occured.
-	pub fn try_new_with<F, E>(initializer: F) -> Result<Self, E>
-		where F: FnOnce(&mut *mut T) -> Option<E> {
-		let mut ptr = ptr::null_mut();
-
-		let error = initializer(&mut ptr);
-
-		match error {
-			Some(error) => Err(error),
-			None => Ok(Self::from_raw(ptr))
-		}
+	/// Warning: it's important that you check the `raw_pointer` to not be null before calling this function.
+	pub fn new(raw_pointer: *mut T) -> Self {
+		ComPtr(unsafe { ptr::Shared::new(raw_pointer) })
 	}
 
 	/// Retrieves a pointer to another interface implemented by this COM object.
@@ -64,50 +45,46 @@ impl<T> ComPtr<T> {
 
 		if ptr != ptr::null_mut() {
 			// Already did the non-null check.
-			Some(ComPtr::from_raw_unchecked(unsafe { mem::transmute(ptr) }))
+			Some(ComPtr::new(unsafe { mem::transmute(ptr) }))
 		} else {
 			None
 		}
 	}
 
 	/// Returns a mutable reference to the COM interface.
-	pub fn to_raw(&self) -> &mut T {
+	// Cannot use the `AsMut` trait because it does not work with interior mutability.
+	pub fn as_mut(&self) -> &mut T {
 		// We don't need any checks because of the class invariant.
 		unsafe {
-			&mut *self.0.as_ptr()
+			&mut *self.get()
 		}
 	}
-	
+
+	/// Returns the containing pointer, without calling `Release`.
+	///
+	/// Warning: this function can be used to leak memory.
 	pub fn into_raw(self) -> *mut T {
-		let ptr = unsafe {
-			self.0.as_mut_ptr()
-		};
-		
+		let ptr = self.get();
 		mem::forget(self);
-		
 		ptr
 	}
 
-	/// Initialize from a COM pointer, checking to make sure it's not null.
-	fn from_raw(ptr: *mut T) -> Self {
-		assert_ne!(ptr, ptr::null_mut());
-
-		Self::from_raw_unchecked(ptr)
-	}
-
-	/// Initialize from a raw COM pointer, already checked to be non-null.
-	/// Warning: make sure `ptr` is not null, otherwise you could break the invariant.
-	fn from_raw_unchecked(ptr: *mut T) -> Self {
-		unsafe {
-			ComPtr(ptr::Shared::new(ptr))
-		}
-	}
-
-	/// Up-casts the pointer to IUnknown.
+	// Up-casts the pointer to IUnknown.
+	//
+	// Note: clients of the library can just call these methods on the interface.
+	// However, being in generic code, and without having any way to have IUnknown as a trait bound, we need this method.
 	fn as_unknown(&self) -> &mut IUnknown {
 		unsafe {
-			mem::transmute(self.0)
+			mem::transmute(self.as_mut())
 		}
+	}
+
+	// Returns a non-owning pointer to the interface.
+	//
+	// Note: it's recommended to use this method instead of calling methods on the `Shared` struct,
+	// since it is still unstable and its API could change.
+	fn get(&self) -> *mut T {
+		self.0.as_ptr()
 	}
 }
 
@@ -119,12 +96,6 @@ impl<T> Drop for ComPtr<T> {
 	}
 }
 
-impl<T> fmt::Debug for ComPtr<T> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "ComPtr({:?})", self.0.as_ptr())
-	}
-}
-
 impl<T> Clone for ComPtr<T> {
 	fn clone(&self) -> Self {
 		unsafe {
@@ -132,28 +103,26 @@ impl<T> Clone for ComPtr<T> {
 		}
 
 		// Safe to call because we know the original was non-null.
-		Self::from_raw_unchecked(self.to_raw())
+		ComPtr(self.0)
+	}
+}
+
+impl<T> fmt::Debug for ComPtr<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "ComPtr({:p})", self.get())
+	}
+}
+
+impl<T> fmt::Pointer for ComPtr<T> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "{:p}", self.get())
 	}
 }
 
 impl<T> ops::Deref for ComPtr<T> {
 	type Target = T;
 	fn deref(&self) -> &T {
-		self.to_raw()
-	}
-}
-
-impl<T> ops::DerefMut for ComPtr<T> {
-	fn deref_mut(&mut self) -> &mut T {
-		self.to_raw()
-	}
-}
-
-impl<T> convert::AsMut<*mut T> for ComPtr<T> {
-	fn as_mut(&mut self) -> &mut *mut T {
-		unsafe {
-			mem::transmute(self)
-		}
+		self.as_mut()
 	}
 }
 
@@ -223,18 +192,38 @@ mod tests {
 		}
 	}
 
+	fn create_com_ptr() -> ComPtr<TestInterface> {
+		ComPtr::new({
+			let mut ptr = ptr::null_mut();
+			create_interface(&mut ptr);
+			ptr
+		})
+	}
+
 	#[test]
 	fn create_and_use_interface() {
-		let test = ComPtr::new_with(|ptr| {
-			create_interface(ptr);
-		});
+		let comptr = create_com_ptr();
 
 		{
-			let unknown = test.query_interface::<IUnknown>();
+			let unknown = comptr.query_interface::<IUnknown>();
 
 			let _clone = unknown.clone();
 		}
 
-		assert_eq!(unsafe { test.test_function() }, 1234);
+		assert_eq!(unsafe { comptr.as_mut().test_function() }, 1234);
+	}
+
+	#[test]
+	fn debug_trait() {
+		let comptr = create_com_ptr();
+
+		println!("{:?}", comptr);
+	}
+
+	#[test]
+	fn pointer_trait() {
+		let comptr = create_com_ptr();
+
+		println!("ComPtr printed as a pointer: {:p}", comptr);
 	}
 }
