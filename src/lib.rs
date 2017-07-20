@@ -51,6 +51,16 @@ impl<T> ComPtr<T> {
 		}
 	}
 
+	/// Up-casts in the inheritance hierarchy.
+	///
+	/// Rust does not understand inheritance, therefore this function has to be manually called.
+	pub fn upcast<U>(&self) -> &ComPtr<U>
+		where T: ops::Deref<Target = U> {
+			unsafe {
+				mem::transmute(self)
+			}
+		}
+
 	/// Returns a mutable pointer to the COM interface.
 	pub fn as_mut_ptr(&self) -> *mut T {
 		self.get()
