@@ -23,11 +23,20 @@ use std::{ptr, mem, fmt, ops};
 pub struct ComPtr<T>(ptr::Shared<T>);
 
 impl<T> ComPtr<T> {
+	/// Constructs a `ComPtr` from a non-null raw pointer, asserting it to be non-null.
+	pub fn new(raw_pointer: *mut T) -> Self {
+		assert_ne!(raw_pointer, ptr::null_mut(), "Tried to create `ComPtr` from a null pointer");
+
+		unsafe {
+			Self::new_unchecked(raw_pointer)
+		}
+	}
+
 	/// Constructs a `ComPtr` from a non-null raw pointer, without checking it to be non-null.
 	///
-	/// Warning: it's important that you check the `raw_pointer` to not be null before calling this function.
-	pub fn new(raw_pointer: *mut T) -> Self {
-		ComPtr(unsafe { ptr::Shared::new(raw_pointer) })
+	/// Warning: it's important that you ensure that `raw_pointer` isn't null.
+	pub unsafe fn new_unchecked(raw_pointer: *mut T) -> Self {
+		ComPtr(ptr::Shared::new(raw_pointer))
 	}
 
 	/// Retrieves a pointer to another interface implemented by this COM object.
@@ -201,11 +210,13 @@ mod tests {
 	}
 
 	fn create_com_ptr() -> ComPtr<TestInterface> {
-		ComPtr::new({
-			let mut ptr = ptr::null_mut();
-			create_interface(&mut ptr);
-			ptr
-		})
+		let mut ptr = ptr::null_mut();
+
+		create_interface(&mut ptr);
+
+		unsafe {
+			ComPtr::new_unchecked(ptr)
+		}
 	}
 
 	#[test]
