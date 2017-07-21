@@ -19,14 +19,14 @@ extern crate winapi;
 use winapi::um::unknwnbase::IUnknown;
 use winapi::Interface;
 
-use std::{ptr, mem, fmt, ops, convert};
+use std::{ptr, mem, fmt, ops, convert, marker};
 
 /// A pointer to a COM interface.
 ///
 /// The pointer owns a reference to the COM interface, meaning the COM object
 /// cannot be destroyed until the last `ComPtr` using it is destroyed.
 // TODO: use `Shared` once it becomes stable.
-pub struct ComPtr<T: Interface>(*mut T);
+pub struct ComPtr<T: Interface>(&'static mut (), marker::PhantomData<*mut T>);
 
 impl<T: Interface> ComPtr<T> {
 	/// Constructs a `ComPtr` from a non-null raw pointer, asserting it to be non-null.
@@ -42,7 +42,7 @@ impl<T: Interface> ComPtr<T> {
 	///
 	/// Warning: it's important that you ensure that `raw_pointer` isn't null.
 	pub unsafe fn new_unchecked(raw_pointer: *mut T) -> Self {
-		ComPtr(raw_pointer)
+		mem::transmute(raw_pointer)
 	}
 
 	/// Retrieves a pointer to another interface implemented by this COM object.
@@ -59,8 +59,7 @@ impl<T: Interface> ComPtr<T> {
 		}
 
 		if ptr != ptr::null_mut() {
-			// Already did the non-null check.
-			Some(ComPtr::new(unsafe { mem::transmute(ptr) }))
+			Some(unsafe { ComPtr::new_unchecked(mem::transmute(ptr)) })
 		} else {
 			None
 		}
@@ -79,14 +78,9 @@ impl<T: Interface> ComPtr<T> {
 	/// Gets a mutable reference to this interface.
 	pub fn get_mut(&self) -> &mut T {
 		unsafe {
-			mem::transmute(self.get())
+			&mut **mem::transmute::<&Self, &*mut T>(self)
 		}
 	}
-
-	/// Returns a mutable pointer to the COM interface.
-	//pub fn as_raw(&self) -> *mut T {
-	//	self.get()
-	//}
 
 	// Up-casts the pointer to IUnknown.
 	//
@@ -94,16 +88,8 @@ impl<T: Interface> ComPtr<T> {
 	// However, being in generic code, and without having any way to have IUnknown as a trait bound, we need this method.
 	fn as_unknown(&self) -> &mut IUnknown {
 		unsafe {
-			mem::transmute(self.get())
+			mem::transmute(self.get_mut())
 		}
-	}
-
-	// Returns a non-owning pointer to the interface.
-	//
-	// Note: it's recommended to use this method instead of calling methods on the `Shared` struct,
-	// since it is still unstable and its API could change.
-	fn get(&self) -> *mut T {
-		self.0
 	}
 }
 
@@ -122,28 +108,28 @@ impl<T: Interface> Clone for ComPtr<T> {
 		}
 
 		// Safe to call because we know the original was non-null.
-		ComPtr(self.0)
+		unsafe {
+			Self::new_unchecked(self.get_mut())
+		}
 	}
 }
 
 impl<T: Interface> fmt::Debug for ComPtr<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "ComPtr({:p})", self.get())
+		write!(f, "ComPtr({:p})", self.get_mut())
 	}
 }
 
 impl<T: Interface> fmt::Pointer for ComPtr<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "{:p}", self.get())
+		write!(f, "{:p}", self.get_mut())
 	}
 }
 
 impl<T: Interface> ops::Deref for ComPtr<T> {
 	type Target = T;
 	fn deref(&self) -> &T {
-		unsafe {
-			&*self.get()
-		}
+		self.get_mut()
 	}
 }
 
@@ -152,9 +138,9 @@ impl<T: Interface> convert::Into<*mut T> for ComPtr<T> {
 	///
 	/// Warning: this function can be used to leak memory.
 	fn into(self) -> *mut T {
-		let ptr = self.get();
-		mem::forget(self);
-		ptr
+		unsafe {
+			mem::transmute(self)
+		}
 	}
 }
 
