@@ -11,7 +11,6 @@
 //! [Multithreaded COM Apartment](https://msdn.microsoft.com/en-us/library/windows/desktop/ms693421(v=vs.85).aspx),
 //! you can use `unsafe impl Send for ... { }` to make your type `Send`.
 
-#![feature(shared)]
 #![cfg(windows)]
 #![deny(warnings, missing_docs)]
 
@@ -26,7 +25,8 @@ use std::{ptr, mem, fmt, ops, convert};
 ///
 /// The pointer owns a reference to the COM interface, meaning the COM object
 /// cannot be destroyed until the last `ComPtr` using it is destroyed.
-pub struct ComPtr<T: Interface>(ptr::Shared<T>);
+// TODO: use `Shared` once it becomes stable.
+pub struct ComPtr<T: Interface>(*mut T);
 
 impl<T: Interface> ComPtr<T> {
 	/// Constructs a `ComPtr` from a non-null raw pointer, asserting it to be non-null.
@@ -42,7 +42,7 @@ impl<T: Interface> ComPtr<T> {
 	///
 	/// Warning: it's important that you ensure that `raw_pointer` isn't null.
 	pub unsafe fn new_unchecked(raw_pointer: *mut T) -> Self {
-		ComPtr(ptr::Shared::new(raw_pointer))
+		ComPtr(raw_pointer)
 	}
 
 	/// Retrieves a pointer to another interface implemented by this COM object.
@@ -103,7 +103,7 @@ impl<T: Interface> ComPtr<T> {
 	// Note: it's recommended to use this method instead of calling methods on the `Shared` struct,
 	// since it is still unstable and its API could change.
 	fn get(&self) -> *mut T {
-		self.0.as_ptr()
+		self.0
 	}
 }
 

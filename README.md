@@ -4,8 +4,6 @@ Smart pointer for [Component Object Model](https://msdn.microsoft.com/en-us/libr
 This crate is designed to be used together with `winapi-rs`. You can use the COM interfaces declared by it or use
 `RIDL!` macro from that same crate to declare your COM interfaces.
 
-**Note**: This crate currently requires a nightly version of Rust, since it uses the [Shared](https://doc.rust-lang.org/std/ptr/struct.Shared.html) struct.
-
 ## Non-null guarantee
 The `ComPtr` type is built around the invariant that the pointer it manages will **never** be null. Since memory in COM is only freed when the last reference is released, and `ComPtr` only releases its reference when the destructor is run, the invariant is maintained.
 
