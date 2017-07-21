@@ -260,4 +260,43 @@ mod tests {
 
 		println!("ComPtr printed as a pointer: {:p}", comptr);
 	}
+
+	#[test]
+	fn non_zero_optimization() {
+		let value = Some(create_com_ptr());
+
+		assert_eq!(mem::size_of_val(&value), mem::size_of::<usize>(), "Non-zero optimization is not working.");
+	}
+
+	#[test]
+	fn same_as_pointer() {
+		let comptr = create_com_ptr();
+
+		assert_eq!(mem::size_of_val(&comptr), mem::size_of::<*mut ()>());
+	}
+
+	// These tests are not supposed to compile. If they compile and run,
+	// there is a problem with the way `ComPtr` is defined.
+/*
+	fn not_sync() {
+		let ptr = std::sync::Arc::new(create_com_ptr());
+
+		{
+			let clone = ptr.clone();
+
+			std::thread::spawn(move || {
+				clone.get_mut();
+			});
+		}
+
+		ptr.get_mut();
+	}
+
+	fn not_send() {
+		let ptr = create_com_ptr();
+		std::thread::spawn(move || {
+			let _ptr = ptr;
+		});
+	}
+*/
 }
