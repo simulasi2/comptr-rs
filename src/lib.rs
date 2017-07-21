@@ -1,4 +1,15 @@
 //! The main feature of this crate is the `ComPtr` struct, which is used to manage a non-null pointer to a COM interface.
+//!
+//! # Using `ComPtr`
+//!
+//! By default, a `ComPtr` interface is not `Sync` or `Send`:
+//!
+//! - If you know your abstraction uses a thread-safe interface,
+//! you can use `unsafe impl Sync for ... { }` to make your type `Sync`.
+//!
+//! - If you know your interface will only be created in a
+//! [Multithreaded COM Apartment](https://msdn.microsoft.com/en-us/library/windows/desktop/ms693421(v=vs.85).aspx),
+//! you can use `unsafe impl Send for ... { }` to make your type `Send`.
 
 #![feature(shared)]
 #![cfg(windows)]
