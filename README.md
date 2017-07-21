@@ -46,3 +46,6 @@ Issues (i.e. feature requests and bug reports) and pull-requests are welcome!
 
 You can also help by writing code that uses this crate. The more users it has,
 the better tested in real-life scenarios it will be.
+
+## License
+This crate is dual licensed under either of MIT / Apache 2.0, at your option.
