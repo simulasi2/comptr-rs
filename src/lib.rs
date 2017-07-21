@@ -20,15 +20,15 @@ extern crate winapi;
 use winapi::um::unknwnbase::IUnknown;
 use winapi::Interface;
 
-use std::{ptr, mem, fmt, ops};
+use std::{ptr, mem, fmt, ops, convert};
 
 /// A pointer to a COM interface.
 ///
 /// The pointer owns a reference to the COM interface, meaning the COM object
 /// cannot be destroyed until the last `ComPtr` using it is destroyed.
-pub struct ComPtr<T>(ptr::Shared<T>);
+pub struct ComPtr<T: Interface>(ptr::Shared<T>);
 
-impl<T> ComPtr<T> {
+impl<T: Interface> ComPtr<T> {
 	/// Constructs a `ComPtr` from a non-null raw pointer, asserting it to be non-null.
 	pub fn new(raw_pointer: *mut T) -> Self {
 		assert_ne!(raw_pointer, ptr::null_mut(), "Tried to create `ComPtr` from a null pointer");
@@ -69,26 +69,24 @@ impl<T> ComPtr<T> {
 	/// Up-casts in the inheritance hierarchy.
 	///
 	/// Rust does not understand inheritance, therefore this function has to be manually called.
-	pub fn upcast<U>(&self) -> &ComPtr<U>
+	pub fn upcast<U: Interface>(&self) -> &ComPtr<U>
 		where T: ops::Deref<Target = U> {
-			unsafe {
-				mem::transmute(self)
-			}
+		unsafe {
+			mem::transmute(self)
 		}
+	}
+
+	/// Gets a mutable reference to this interface.
+	pub fn get_mut(&self) -> &mut T {
+		unsafe {
+			mem::transmute(self.get())
+		}
+	}
 
 	/// Returns a mutable pointer to the COM interface.
-	pub fn as_mut_ptr(&self) -> *mut T {
-		self.get()
-	}
-
-	/// Returns the containing pointer, without calling `Release`.
-	///
-	/// Warning: this function can be used to leak memory.
-	pub fn into_raw(self) -> *mut T {
-		let ptr = self.get();
-		mem::forget(self);
-		ptr
-	}
+	//pub fn as_raw(&self) -> *mut T {
+	//	self.get()
+	//}
 
 	// Up-casts the pointer to IUnknown.
 	//
@@ -109,7 +107,7 @@ impl<T> ComPtr<T> {
 	}
 }
 
-impl<T> Drop for ComPtr<T> {
+impl<T: Interface> Drop for ComPtr<T> {
 	fn drop(&mut self) {
 		unsafe {
 			self.as_unknown().Release();
@@ -117,7 +115,7 @@ impl<T> Drop for ComPtr<T> {
 	}
 }
 
-impl<T> Clone for ComPtr<T> {
+impl<T: Interface> Clone for ComPtr<T> {
 	fn clone(&self) -> Self {
 		unsafe {
 			self.as_unknown().AddRef();
@@ -128,24 +126,35 @@ impl<T> Clone for ComPtr<T> {
 	}
 }
 
-impl<T> fmt::Debug for ComPtr<T> {
+impl<T: Interface> fmt::Debug for ComPtr<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "ComPtr({:p})", self.get())
 	}
 }
 
-impl<T> fmt::Pointer for ComPtr<T> {
+impl<T: Interface> fmt::Pointer for ComPtr<T> {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "{:p}", self.get())
 	}
 }
 
-impl<T> ops::Deref for ComPtr<T> {
+impl<T: Interface> ops::Deref for ComPtr<T> {
 	type Target = T;
 	fn deref(&self) -> &T {
 		unsafe {
 			&*self.get()
 		}
+	}
+}
+
+impl<T: Interface> convert::Into<*mut T> for ComPtr<T> {
+	/// Returns the containing pointer, without calling `Release`.
+	///
+	/// Warning: this function can be used to leak memory.
+	fn into(self) -> *mut T {
+		let ptr = self.get();
+		mem::forget(self);
+		ptr
 	}
 }
 
@@ -164,7 +173,7 @@ mod tests {
 		}
 	}
 
-	pub fn create_interface(output: *mut *mut TestInterface) {
+	fn create_interface(output: *mut *mut TestInterface) {
 		// Note: this function leaks memory in many places.
 		// Fortunately it is reclaimed by Windows when the tests end.
 
