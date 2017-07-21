@@ -4,12 +4,7 @@
 #![cfg(windows)]
 #![deny(warnings, missing_docs)]
 
-// Macros are used in the unit tests, to generate interfaces.
-#[cfg(test)]
-#[macro_use] extern crate winapi;
-
-// Normal build does not use the macros.
-#[cfg(not(test))]
+#[cfg_attr(test, macro_use)]
 extern crate winapi;
 use winapi::um::unknwnbase::IUnknown;
 use winapi::Interface;
