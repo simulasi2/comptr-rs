@@ -16,33 +16,33 @@
 
 #[cfg_attr(test, macro_use)]
 extern crate winapi;
-use winapi::um::unknwnbase::IUnknown;
-use winapi::Interface;
+use winapi::{Interface, um::unknwnbase::IUnknown};
 
-use std::{ptr, mem, fmt, ops, convert, marker};
+use std::{ptr, mem, fmt, ops, convert};
 
 /// A pointer to a COM interface.
 ///
 /// The pointer owns a reference to the COM interface, meaning the COM object
 /// cannot be destroyed until the last `ComPtr` using it is destroyed.
 // TODO: use `Shared` once it becomes stable.
-pub struct ComPtr<T: Interface>(&'static mut (), marker::PhantomData<*mut T>);
+pub struct ComPtr<T: Interface>(ptr::NonNull<T>);
 
 impl<T: Interface> ComPtr<T> {
 	/// Constructs a `ComPtr` from a non-null raw pointer, asserting it to be non-null.
 	pub fn new(raw_pointer: *mut T) -> Self {
-		assert_ne!(raw_pointer, ptr::null_mut(), "Tried to create `ComPtr` from a null pointer");
+		let ptr = ptr::NonNull::new(raw_pointer)
+			.expect("Tried to create `ComPtr` from a null pointer");
 
-		unsafe {
-			Self::new_unchecked(raw_pointer)
-		}
+		ComPtr(ptr)
 	}
 
 	/// Constructs a `ComPtr` from a non-null raw pointer, without checking it to be non-null.
 	///
 	/// Warning: it's important that you ensure that `raw_pointer` isn't null.
 	pub unsafe fn new_unchecked(raw_pointer: *mut T) -> Self {
-		mem::transmute(raw_pointer)
+		let ptr = ptr::NonNull::new_unchecked(raw_pointer);
+
+		ComPtr(ptr)
 	}
 
 	/// Retrieves a pointer to another interface implemented by this COM object.
@@ -58,11 +58,7 @@ impl<T: Interface> ComPtr<T> {
 			self.as_unknown().QueryInterface(&U::uuidof(), &mut ptr);
 		}
 
-		if ptr != ptr::null_mut() {
-			Some(unsafe { ComPtr::new_unchecked(mem::transmute(ptr)) })
-		} else {
-			None
-		}
+		ptr::NonNull::new(ptr as *mut U).map(|ptr| ComPtr(ptr))
 	}
 
 	/// Up-casts in the inheritance hierarchy.
