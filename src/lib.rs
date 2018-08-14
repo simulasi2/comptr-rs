@@ -139,7 +139,9 @@ impl<T: Interface> convert::Into<*mut T> for ComPtr<T> {
     ///
     /// Warning: this function can be used to leak memory.
     fn into(self) -> *mut T {
-        self.0.as_ptr()
+        let ptr = self.0.as_ptr();
+        std::mem::forget(self);
+        ptr
     }
 }
 
