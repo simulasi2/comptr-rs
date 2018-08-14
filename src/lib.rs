@@ -51,6 +51,13 @@ impl<T> ComPtr<T> {
         ComPtr(ptr)
     }
 
+	/// Creates a COM pointer with a dangling non-null reference.
+	///
+	/// This pointer should be initialized before being used.
+	pub fn dangling() -> Self {
+		ComPtr(ptr::NonNull::dangling())
+	}
+
     /// Retrieves a pointer to another interface implemented by this COM object.
     pub fn query_interface<U>(&self) -> Option<ComPtr<U>>
     where
