@@ -13,12 +13,17 @@
 
 #![cfg(windows)]
 #![deny(warnings, missing_docs)]
+#![cfg_attr(feature = "cargo-clippy", warn(clippy))]
 
 #[cfg_attr(test, macro_use)]
 extern crate winapi;
 use winapi::{um::unknwnbase::IUnknown, Interface};
 
-use std::{convert, fmt, mem, ops, ptr};
+use std::{
+    convert, fmt,
+    ops::{Deref, DerefMut},
+    ptr,
+};
 
 /// A pointer to a COM interface.
 ///
@@ -68,22 +73,27 @@ impl<T: Interface> ComPtr<T> {
     /// Rust does not understand inheritance, therefore this function has to be manually called.
     pub fn upcast<U: Interface>(&self) -> &ComPtr<U>
     where
-        T: ops::Deref<Target = U>,
+        T: Deref<Target = U>,
     {
-        unsafe { mem::transmute(self) }
+        unsafe { &*(self as *const _ as *const _) }
     }
 
-    /// Gets a mutable reference to this interface.
-    pub fn get_mut(&self) -> &mut T {
-        unsafe { &mut **mem::transmute::<&Self, &*mut T>(self) }
+    /// Dereferences the content.
+    pub fn as_ref(&self) -> &T {
+        unsafe { self.0.as_ref() }
+    }
+
+    /// Mutably dereferences the content.
+    pub fn as_mut(&self) -> &mut T {
+        unsafe { &mut *self.0.as_ptr() }
     }
 
     // Up-casts the pointer to IUnknown.
     //
     // Note: clients of the library can just call these methods on the interface.
     // However, being in generic code, and without having any way to have IUnknown as a trait bound, we need this method.
-    fn as_unknown(&self) -> &mut IUnknown {
-        unsafe { mem::transmute(self.get_mut()) }
+    fn as_unknown(&self) -> &IUnknown {
+        unsafe { &*(self.0.as_ref() as *const _ as *const IUnknown) }
     }
 }
 
@@ -101,27 +111,26 @@ impl<T: Interface> Clone for ComPtr<T> {
             self.as_unknown().AddRef();
         }
 
-        // Safe to call because we know the original was non-null.
-        unsafe { Self::new_unchecked(self.get_mut()) }
-    }
-}
-
-impl<T: Interface> fmt::Debug for ComPtr<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ComPtr({:p})", self.get_mut())
+        ComPtr(self.0)
     }
 }
 
 impl<T: Interface> fmt::Pointer for ComPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:p}", self.get_mut())
+        write!(f, "{:p}", self.0)
     }
 }
 
-impl<T: Interface> ops::Deref for ComPtr<T> {
+impl<T: Interface> Deref for ComPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        self.get_mut()
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl<T: Interface> DerefMut for ComPtr<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { self.0.as_mut() }
     }
 }
 
@@ -130,7 +139,7 @@ impl<T: Interface> convert::Into<*mut T> for ComPtr<T> {
     ///
     /// Warning: this function can be used to leak memory.
     fn into(self) -> *mut T {
-        unsafe { mem::transmute(self) }
+        self.0.as_ptr()
     }
 }
 
@@ -138,6 +147,7 @@ impl<T: Interface> convert::Into<*mut T> for ComPtr<T> {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+    use std::mem;
 
     use winapi::um::unknwnbase::{IUnknown, IUnknownVtbl};
 
@@ -217,19 +227,11 @@ mod tests {
         let comptr = create_com_ptr();
 
         {
-            let unknown = comptr.query_interface::<IUnknown>();
-
-            let _clone = unknown.clone();
+            let clone = comptr.clone();
+            assert_eq!(unsafe { clone.test_function() }, 1234);
         }
 
         assert_eq!(unsafe { comptr.test_function() }, 1234);
-    }
-
-    #[test]
-    fn debug_trait() {
-        let comptr = create_com_ptr();
-
-        println!("{:?}", comptr);
     }
 
     #[test]
@@ -256,29 +258,4 @@ mod tests {
 
         assert_eq!(mem::size_of_val(&comptr), mem::size_of::<*mut ()>());
     }
-
-    // These tests are not supposed to compile. If they compile and run,
-	// there is a problem with the way `ComPtr` is defined.
-/*
-	fn not_sync() {
-		let ptr = std::sync::Arc::new(create_com_ptr());
-
-		{
-			let clone = ptr.clone();
-
-			std::thread::spawn(move || {
-				clone.get_mut();
-			});
-		}
-
-		ptr.get_mut();
-	}
-
-	fn not_send() {
-		let ptr = create_com_ptr();
-		std::thread::spawn(move || {
-			let _ptr = ptr;
-		});
-	}
-*/
 }
