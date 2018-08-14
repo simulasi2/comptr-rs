@@ -30,9 +30,10 @@ use std::{
 /// The pointer owns a reference to the COM interface, meaning the COM object
 /// cannot be destroyed until the last `ComPtr` using it is destroyed.
 // TODO: use `Shared` once it becomes stable.
-pub struct ComPtr<T: Interface>(ptr::NonNull<T>);
+#[repr(transparent)]
+pub struct ComPtr<T>(ptr::NonNull<T>);
 
-impl<T: Interface> ComPtr<T> {
+impl<T> ComPtr<T> {
     /// Constructs a `ComPtr` from a non-null raw pointer, asserting it to be non-null.
     pub fn new(raw_pointer: *mut T) -> Self {
         let ptr =
@@ -97,7 +98,7 @@ impl<T: Interface> ComPtr<T> {
     }
 }
 
-impl<T: Interface> Drop for ComPtr<T> {
+impl<T> Drop for ComPtr<T> {
     fn drop(&mut self) {
         unsafe {
             self.as_unknown().Release();
@@ -105,7 +106,7 @@ impl<T: Interface> Drop for ComPtr<T> {
     }
 }
 
-impl<T: Interface> Clone for ComPtr<T> {
+impl<T> Clone for ComPtr<T> {
     fn clone(&self) -> Self {
         unsafe {
             self.as_unknown().AddRef();
@@ -115,26 +116,26 @@ impl<T: Interface> Clone for ComPtr<T> {
     }
 }
 
-impl<T: Interface> fmt::Pointer for ComPtr<T> {
+impl<T> fmt::Pointer for ComPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:p}", self.0)
     }
 }
 
-impl<T: Interface> Deref for ComPtr<T> {
+impl<T> Deref for ComPtr<T> {
     type Target = T;
     fn deref(&self) -> &T {
         unsafe { self.0.as_ref() }
     }
 }
 
-impl<T: Interface> DerefMut for ComPtr<T> {
+impl<T> DerefMut for ComPtr<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { self.0.as_mut() }
     }
 }
 
-impl<T: Interface> convert::Into<*mut T> for ComPtr<T> {
+impl<T> convert::Into<*mut T> for ComPtr<T> {
     /// Returns the containing pointer, without calling `Release`.
     ///
     /// Warning: this function can be used to leak memory.
