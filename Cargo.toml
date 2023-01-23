@@ -1,3 +1,5 @@
+cargo-features = ["edition"]
+
 [package]
 name = "comptr"
 version = "0.1.0"
